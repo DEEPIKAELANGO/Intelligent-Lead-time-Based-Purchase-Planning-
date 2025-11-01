@@ -40,7 +40,7 @@ costs, optimized inventory levels (freeing up working capital), and zero lost pr
 6. **Enables Data-Driven Decisions:** Plant managers and executives gain real-time visibility into procurement efficiency,
 supplier performance, and cost trends—replacing gut feelings with concrete metrics for strategic planning.​
 
-​7. **Improves Work-Life Balance:** Users report sleeping better at night knowing the automated system is monitoring
+  ​7. **Improves Work-Life Balance:** Users report sleeping better at night knowing the automated system is monitoring
 everything, catching issues before they become crises, and transforming their role from "blamed for failures" to
 "celebrated for prevention.“​
 
