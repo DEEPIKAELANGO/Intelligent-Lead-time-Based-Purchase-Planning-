@@ -1,0 +1,147 @@
+Monthly_currentyear.vbs
+
+Set WshShell = WScript.CreateObject("WScript.Shell")
+Set WshShellpy = WScript.CreateObject("WScript.Shell")
+Dim exeName 
+Dim statusCode
+exeName = """C:\Program Files (x86)\SAP\SAPGUI770\SAPgui\saplogon.exe"""
+WshShell.Run(exeName)
+WScript.Sleep 5000
+
+If Not IsObject(App) Then
+   Set SapGuiAuto = GetObject("SAPGUI")
+   Set App = SapGuiAuto.GetScriptingEngine
+End If
+If Not IsObject(Connection) Then
+    Set Connection = App.OpenConnection("- P20 Production ERP Logistics and Finance")
+End If
+If Not IsObject(session) Then
+   Set session = Connection.Children(0)
+    
+End If
+'If IsObject(WScript) Then
+'   WScript.ConnectObject session, "on"
+'   WScript.ConnectObject Application, "on"
+'End If
+
+Set objFSO = CreateObject("Scripting.FileSystemObject")
+Set objFile = objFSO.OpenTextFile("Credentials.txt", 1)
+count = 0
+Dim fileLines()
+
+Do
+  count = count + 1
+  Redim PRESERVE fileLines(count)
+  fileLines(count) = trim(Mid(objFile.ReadLine,1,500))
+Loop Until objFile.AtEndOfStream
+
+'wscript.echo fileLines(3)
+sappass = Trim(TextBox1)
+session.findById("wnd[0]").maximize
+session.findById("wnd[0]/usr/txtRSYST-BNAME").Text = fileLines(1)
+session.findById("wnd[0]/usr/pwdRSYST-BCODE").Text = fileLines(2)
+session.findById("wnd[0]/usr/pwdRSYST-BCODE").SetFocus
+session.findById("wnd[0]/usr/pwdRSYST-BCODE").caretPosition = 9
+session.findById("wnd[0]").sendVKey 0
+If session.findById("wnd[0]/titl").Text = "SAP" Then
+session.findById("wnd[1]/usr/radMULTI_LOGON_OPT2").Select
+session.findById("wnd[1]/usr/radMULTI_LOGON_OPT2").SetFocus
+session.findById("wnd[1]/tbar[0]/btn[0]").press
+End If
+
+If Not IsObject(application) Then
+   Set SapGuiAuto  = GetObject("SAPGUI")
+   Set application = SapGuiAuto.GetScriptingEngine
+End If
+If Not IsObject(connection) Then
+   Set connection = application.Children(0)
+End If
+If Not IsObject(session) Then
+   Set session    = connection.Children(0)
+End If
+If IsObject(WScript) Then
+   WScript.ConnectObject session,     "on"
+   WScript.ConnectObject application, "on"
+End If
+session.findById("wnd[0]").maximize
+
+session.findById("wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell").selectedNode = "0000000003"
+session.findById("wnd[0]/usr/cntlIMAGE_CONTAINER/shellcont/shell/shellcont[0]/shell").doubleClickNode "0000000003"
+session.findById("wnd[0]/usr/lbl[5,8]").setFocus
+session.findById("wnd[0]/usr/lbl[5,8]").caretPosition = 0
+session.findById("wnd[0]").sendVKey 2
+session.findById("wnd[0]/usr/lbl[9,16]").setFocus
+session.findById("wnd[0]/usr/lbl[9,16]").caretPosition = 1
+session.findById("wnd[0]").sendVKey 2
+session.findById("wnd[0]/usr/lbl[16,18]").setFocus
+session.findById("wnd[0]/usr/lbl[16,18]").caretPosition = 20
+session.findById("wnd[0]").sendVKey 2
+session.findById("wnd[0]/usr/ctxtP_WERKS").text = "IN04"
+
+
+' Dynamic date range script for SAP GUI
+Dim currentDate, startMonth, startYear, i
+Dim monthStart, monthEnd, dateFieldLow, dateFieldHigh
+
+' Get current date
+currentDate = Date()
+startMonth = Month(currentDate)
+startYear = Year(currentDate)
+
+' Loop through 12 months starting from current month
+For i = 1 To 12
+    ' Calculate the month and year for current iteration
+    Dim targetMonth, targetYear
+    targetMonth = ((startMonth - 1 + (i - 1)) Mod 12) + 1
+    targetYear = startYear + Int((startMonth - 1 + (i - 1)) / 12)
+    
+    ' Get first day of the month
+    monthStart = DateSerial(targetYear, targetMonth, 1)
+    
+    ' Get last day of the month
+    monthEnd = DateSerial(targetYear, targetMonth + 1, 1) - 1
+    
+    ' Format dates as DD.MM.YYYY
+    Dim formattedStart, formattedEnd
+    formattedStart = Right("0" & Day(monthStart), 2) & "." & Right("0" & Month(monthStart), 2) & "." & Year(monthStart)
+    formattedEnd = Right("0" & Day(monthEnd), 2) & "." & Right("0" & Month(monthEnd), 2) & "." & Year(monthEnd)
+    
+    ' Set the date fields
+    dateFieldLow = "wnd[0]/usr/ctxtP_DATE" & i & "-LOW"
+    dateFieldHigh = "wnd[0]/usr/ctxtP_DATE" & i & "-HIGH"
+    
+    session.findById(dateFieldLow).text = formattedStart
+    session.findById(dateFieldHigh).text = formattedEnd
+    
+    ' Optional: Add some logging to see what dates are being set
+    ' WScript.Echo "Month " & i & ": " & formattedStart & " to " & formattedEnd
+Next
+
+session.findById("wnd[0]/usr/btn%_P_MATNR_%_APP_%-VALU_PUSH").press
+session.findById("wnd[1]/usr/tabsTAB_STRIP/tabpSIVA/ssubSCREEN_HEADER:SAPLALDB:3010/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[1,0]").text = "1A**********"
+session.findById("wnd[1]/usr/tabsTAB_STRIP/tabpSIVA/ssubSCREEN_HEADER:SAPLALDB:3010/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[1,1]").text = "3F**********"
+session.findById("wnd[1]/usr/tabsTAB_STRIP/tabpSIVA/ssubSCREEN_HEADER:SAPLALDB:3010/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[1,2]").text = "3E**********"
+session.findById("wnd[1]/usr/tabsTAB_STRIP/tabpSIVA/ssubSCREEN_HEADER:SAPLALDB:3010/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[1,3]").text = "3T**********"
+session.findById("wnd[1]/usr/tabsTAB_STRIP/tabpSIVA/ssubSCREEN_HEADER:SAPLALDB:3010/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[1,3]").setFocus
+session.findById("wnd[1]/usr/tabsTAB_STRIP/tabpSIVA/ssubSCREEN_HEADER:SAPLALDB:3010/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[1,3]").caretPosition = 1
+session.findById("wnd[1]/tbar[0]/btn[8]").press
+
+session.findById("wnd[0]/tbar[1]/btn[8]").press
+
+session.findById("wnd[0]/tbar[1]/btn[33]").press
+session.findById("wnd[1]/usr/lbl[1,9]").setFocus
+session.findById("wnd[1]/usr/lbl[1,9]").caretPosition = 4
+session.findById("wnd[1]").sendVKey 2
+
+session.findById("wnd[0]/mbar/menu[0]/menu[1]/menu[2]").select
+session.findById("wnd[1]/usr/subSUBSCREEN_STEPLOOP:SAPLSPO5:0150/sub:SAPLSPO5:0150/radSPOPLI-SELFLAG[1,0]").select
+session.findById("wnd[1]/usr/subSUBSCREEN_STEPLOOP:SAPLSPO5:0150/sub:SAPLSPO5:0150/radSPOPLI-SELFLAG[1,0]").setFocus
+session.findById("wnd[1]/tbar[0]/btn[0]").press
+session.findById("wnd[1]/usr/ctxtDY_PATH").text = "C:\Users\edeepika\OneDrive - Nokia\RPA\PO Tigger for LT\"
+session.findById("wnd[1]/usr/ctxtDY_FILENAME").text = "current.txt"
+session.findById("wnd[1]/usr/ctxtDY_PATH").setFocus
+session.findById("wnd[1]/usr/ctxtDY_PATH").caretPosition = 69
+session.findById("wnd[1]/tbar[0]/btn[0]").press
+
+session.findById("wnd[0]").close
+session.findById("wnd[1]/usr/btnSPOP-OPTION1").press
