@@ -1,1 +1,338 @@
+import re
+import os
+import pandas as pd
+from datetime import datetime, date
+from openpyxl.styles import PatternFill
+from dateutil.relativedelta import relativedelta
+from openpyxl.formatting.rule import CellIsRule
 
+def vbs():
+    os.system('wscript.exe "Monthly_currentyear.vbs"')
+    os.system('wscript.exe "Monthly_nextyear.vbs"')
+    os.system('wscript.exe "OPO.vbs"')
+
+def txt_to_excel(txt_file, xlsx_file):
+    try:
+        file_name = os.path.basename(txt_file).lower()
+        with open(txt_file, 'r', encoding='utf-16') as f:
+            lines = f.readlines()
+
+            # For non-opo files, skip first 4 lines and stop at trigger text
+            if "opo.txt" in file_name:
+                filtered_lines = [line.strip().split('\t') for line in lines if line.strip()]
+            else:
+                lines = lines[4:]  # Skip first 4 lines
+                filtered_lines = []
+                for line in lines:
+                    if "Objects for selection screen 1000" in line:
+                        break
+                    if line.strip():
+                        filtered_lines.append(line.strip().split('\t'))
+
+            if not filtered_lines:
+                print(f"No valid data found in {txt_file}")
+                return
+
+        # Convert to DataFrame
+        df = pd.DataFrame(filtered_lines)
+
+        # Write to Excel
+        df.to_excel(xlsx_file, index=False, header=False)
+
+        # Delete the original text file
+        os.remove(txt_file)
+        print(f"Converted and deleted: {txt_file}")
+
+    except Exception as e:
+        print(f"Error processing {txt_file}: {e}")
+
+def po_tigger():
+    # File names
+    # Get today's date
+    today = date.today()
+
+    # Get ISO week number
+    week_number = today.isocalendar()[1]
+    file1 = 'current.xlsx'
+    file2 = 'next.xlsx'
+    opo_file = 'opo.xlsx'
+    GPMA = 'C:\\Users\\edeepika\\OneDrive - Nokia\\RPA\\PO Tigger for LT\\GPMA Weekly dump.xls'
+    output_file = f"C:\\Users\\edeepika\\OneDrive - Nokia\\RPA\\PO Tigger for LT\\OPO Vs LT WK {week_number}.xlsx"
+
+    # Read input files
+    df1 = pd.read_excel(file1)
+    df2 = pd.read_excel(file2)
+    opo_df = pd.read_excel(opo_file)
+    gpma_df = pd.read_excel(GPMA, sheet_name='all')
+
+    # Strip and clean column names
+    df1.columns = df1.columns.str.strip()
+    df2.columns = df2.columns.str.strip()
+    opo_df.columns = opo_df.columns.str.strip()
+    gpma_df.columns = gpma_df.columns.str.strip()
+
+    # Base date: start of current month
+    current_date = datetime.now().replace(day=1)
+    # Define column groups
+    required_columns = ['Material', 'Material Description', 'PGr', 'Description', 'Available stock', 'Blocked stock']
+    month_columns = [f'Requirements {i}' for i in range(1, 13)]
+    # Prepare df1
+    selected_cols_df1 = [col for col in required_columns + month_columns if col in df1.columns]
+    df1 = df1[selected_cols_df1]
+
+    # Convert Requirements columns and stock columns to numeric in df1
+    for col in month_columns:
+        if col in df1.columns:
+            # Remove commas and convert to numeric
+            df1[col] = df1[col].astype(str).str.replace(',', '').replace('nan', '')
+            df1[col] = pd.to_numeric(df1[col], errors='coerce')
+
+    # Convert stock columns to numeric
+    if 'Available stock' in df1.columns:
+        df1['Available stock'] = df1['Available stock'].astype(str).str.replace(',', '').replace('nan', '')
+        df1['Available stock'] = pd.to_numeric(df1['Available stock'], errors='coerce')
+    if 'Blocked stock' in df1.columns:
+        df1['Blocked stock'] = df1['Blocked stock'].astype(str).str.replace(',', '').replace('nan', '')
+        df1['Blocked stock'] = pd.to_numeric(df1['Blocked stock'], errors='coerce')
+
+    # Prepare df2
+    df2 = df2[['Material'] + [col for col in month_columns if col in df2.columns]]
+
+    # Convert Requirements columns to numeric in df2
+    for col in month_columns:
+        if col in df2.columns:
+            # Remove commas and convert to numeric
+            df2[col] = df2[col].astype(str).str.replace(',', '').replace('nan', '')
+            df2[col] = pd.to_numeric(df2[col], errors='coerce')
+
+    # Create month mappings
+    month_mapping_df1 = {
+        f"Requirements {i}": (current_date + relativedelta(months=i - 1)).strftime("%b-%Y")
+        for i in range(1, 13)
+    }
+    month_mapping_df2 = {
+        f"Requirements {i}": (current_date + relativedelta(months=i + 11)).strftime("%b-%Y")
+        for i in range(1, 13)
+    }
+
+    # Rename columns in df1 and df2
+    df1 = df1.rename(columns=month_mapping_df1)
+    df2 = df2.rename(columns=month_mapping_df2)
+    # Rename stock columns
+    df1 = df1.rename(columns={
+        'Available stock': 'Stock',
+        'Blocked stock': 'B Stock'
+    })
+
+    # Merge df1 and df2 on 'Material'
+    merged_df = pd.merge(df1, df2, on='Material', how='left')
+    # Add custom columns after 'Description'
+    custom_columns = [
+        'OPO', 'Stock +OPO', 'NewLT (Days)', 'LT(Month)',
+        'Stock+OPO Coverage', 'POtoP', 'PO to Place', 'Total Demand'
+    ]
+    desc_index = merged_df.columns.get_loc('Description') + 1
+    for i, col in enumerate(custom_columns):
+        merged_df.insert(loc=desc_index + i, column=col, value="")
+
+    # --- Handle opo.xlsx ---
+    def sum_open_quantity(cell):
+        if pd.isna(cell):
+            return 0
+        try:
+            numbers = [float(x.replace(",", "")) for x in str(cell).split() if x.strip()]
+            return sum(numbers)
+        except:
+            return 0
+
+    # Clean and convert Open Quantity
+    opo_df = opo_df.rename(columns=lambda x: x.strip())
+    opo_df['Open Quantity'] = opo_df['Open Quantity'].apply(sum_open_quantity)
+
+    # Rename for merging
+    opo_df = opo_df.rename(columns={'Material Code': 'Material'})
+
+    # Group by Material
+    opo_grouped = opo_df.groupby('Material', as_index=False)['Open Quantity'].sum()
+    opo_sheet = opo_grouped.copy()
+
+    # Map to merged_df["OPO"]
+    opo_map = opo_grouped.set_index('Material')['Open Quantity'].to_dict()
+    merged_df['OPO'] = merged_df['Material'].map(opo_map)
+
+    # Clean GPMA column names and rename GLOBAL_PART_NUMBER to Material
+    gpma_df = gpma_df.rename(columns=lambda x: x.strip())
+    if 'GLOBAL_PART_NUMBER' in gpma_df.columns:
+        gpma_df = gpma_df.rename(columns={'GLOBAL_PART_NUMBER': 'Material'})
+
+    # Convert necessary columns to appropriate types
+    gpma_df['SUPPLIER_LEADTIME_WITH_FORECAST'] = pd.to_numeric(
+        gpma_df['SUPPLIER_LEADTIME_WITH_FORECAST'], errors='coerce'
+    )
+    gpma_df['PRICE_TYPE'] = gpma_df['PRICE_TYPE'].astype(str).str.strip()
+    gpma_df['MPN_QUALIFICATION_STATUS'] = gpma_df['MPN_QUALIFICATION_STATUS'].astype(str).str.strip()
+    gpma_df['SHARE_PERCENT'] = pd.to_numeric(gpma_df['SHARE_PERCENT'], errors='coerce')
+
+    # Filter GPMA data based on conditions and find max lead time for duplicates
+    valid_lead_times = {}
+    for _, row in gpma_df.iterrows():
+        material = row['Material']
+        lead_time = row['SUPPLIER_LEADTIME_WITH_FORECAST']
+        price_type = row['PRICE_TYPE']
+        mpn_status = row['MPN_QUALIFICATION_STATUS']
+        share_percent = row['SHARE_PERCENT']
+
+        # Check all conditions
+        if price_type == 'CON':
+            if mpn_status != 'RB':
+                if share_percent != 0.0 and pd.notna(share_percent):
+                    if pd.notna(lead_time):
+                        # If material already exists, keep the one with higher lead time
+                        if material in valid_lead_times:
+                            if lead_time > valid_lead_times[material]:
+                                valid_lead_times[material] = lead_time
+                        else:
+                            valid_lead_times[material] = lead_time
+
+    # Map lead times to merged_df
+    merged_df['NewLT (Days)'] = merged_df['Material'].map(valid_lead_times)
+    # Remove rows where no lead time was found (NewLT (Days) is NaN)
+    merged_df = merged_df.dropna(subset=['NewLT (Days)'])
+    merged_df['LT(Month)'] = (merged_df['NewLT (Days)'] / 31).round(1)
+    merged_df['Stock +OPO'] = merged_df['Stock'] + merged_df['OPO'].fillna(0)
+
+    # Step 1: Generate 24 future month names with 'S_' prefix
+    start_date = datetime.now().replace(day=1)
+
+    # Future months like S_Jul-2025, S_Aug-2025, ...
+    future_columns = [
+        f"S_{(start_date + relativedelta(months=i)).strftime('%b-%Y')}"
+        for i in range(24)
+    ]
+
+    # Step 2: Find the last existing month column (matching MMM-YYYY)
+    month_pattern = re.compile(r'^[A-Za-z]{3}-20\d{2}$')
+    existing_months = [col for col in merged_df.columns if month_pattern.match(col)]
+
+    if existing_months:
+        last_month_index = merged_df.columns.get_loc(existing_months[-1])
+    else:
+        last_month_index = merged_df.columns.get_loc("Stock +OPO")  # fallback
+
+    # Step 3: Get the month columns (Jan-2025, Feb-2025, etc.) - these were the renamed Requirements columns
+    requirements_columns = [col for col in merged_df.columns if month_pattern.match(col)]
+
+    # Sort requirements columns chronologically
+    def sort_month_columns(col):
+        month_year = col.split('-')
+        month_name = month_year[0]
+        year = int(month_year[1])
+        month_num = datetime.strptime(month_name, '%b').month
+        return year * 100 + month_num
+
+    requirements_columns.sort(key=sort_month_columns)
+
+    # Step 4: Insert new 'S_' month columns after the last existing month column
+    for i, col in enumerate(future_columns):
+        merged_df.insert(loc=last_month_index + 1 + i, column=col, value=0)
+
+    # Step 5: Calculate cumulative demand for scenario planning columns
+    for idx, future_col in enumerate(future_columns):
+        if idx == 0:
+            # First S_ column = Total Demand - Requirements 1
+            if len(requirements_columns) > 0:
+                req_col = requirements_columns[0]  # First month column
+                merged_df[future_col] = merged_df['Stock +OPO'] - merged_df[req_col].fillna(0)
+        else:
+            # Subsequent S_ columns = Previous S_ column - Next Requirements column
+            prev_s_col = future_columns[idx - 1]
+            if idx < len(requirements_columns):
+                req_col = requirements_columns[idx]  # Next month column
+                merged_df[future_col] = merged_df[prev_s_col] - merged_df[req_col].fillna(0)
+
+    merged_df['Total Demand'] = merged_df.iloc[:, 15:38].sum(axis=1)
+
+    # 1. Remove rows where Description contains 'Prajusha P', 'Sethu Mani', or 'Old material'
+    exclusion_terms = ['Prajusha P', 'Sethu Mani', 'Old material']
+    for term in exclusion_terms:
+        if 'Description' in merged_df.columns:
+            merged_df = merged_df[~merged_df['Description'].astype(str).str.contains(term, case=False, na=False)]
+
+    # 2. Filter rows where Description contains 'New glob.material' AND Material Description contains 'SWCO'
+    # Remove these rows when both conditions match
+    if 'Description' in merged_df.columns and 'Material Description' in merged_df.columns:
+        condition1 = merged_df['Description'].astype(str).str.contains('New glob.material', case=False, na=False)
+        condition2 = merged_df['Material Description'].astype(str).str.contains('SWCO', case=False, na=False)
+        both_conditions = condition1 & condition2
+        merged_df = merged_df[~both_conditions]
+
+    # Calculate Stock+OPO Coverage using the Excel formula logic
+    # Count cells in future columns (S_ columns) that are >= 0 (zero or positive values)
+    def calculate_coverage(row):
+        # Get values from future columns for this row
+        future_values = row[future_columns]
+        # Count cells that are >= 0 (equivalent to COUNTIF(range,">=0"))
+        coverage_count = (future_values >= 0).sum()
+        return coverage_count
+
+    # Apply the coverage calculation to each row
+    merged_df['Stock+OPO Coverage'] = merged_df.apply(calculate_coverage, axis=1)
+
+    def calculate_potop(row):
+        condition1 = row['LT(Month)'] > row['Stock+OPO Coverage']
+        condition2 = row['Stock +OPO'] >= 0
+        condition3 = row['Total Demand'] > 0
+
+        # Return 1 if all conditions are true, otherwise 0
+        return 1 if (condition1 and condition2 and condition3) else 0
+
+    # Apply the POtoP calculation to each row
+    merged_df['POtoP'] = merged_df.apply(calculate_potop, axis=1)
+
+    merged_df['PO to Place'] = merged_df['POtoP'].apply(lambda x: 'Release PO' if x == 1 else 'PO Covered')
+
+    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+        merged_df.to_excel(writer, index=False, sheet_name='Monthly Demand')
+        opo_sheet.to_excel(writer, index=False, sheet_name='OPO')
+
+        # Get the worksheet
+        worksheet = writer.sheets['Monthly Demand']
+
+        # Only apply conditional formatting if there are rows to format
+        if len(merged_df) > 0:
+            # Define red fill for negative values
+            red_fill = PatternFill(start_color='FFCCCB', end_color='FFCCCB', fill_type='solid')
+
+            # Apply conditional formatting to S_ columns for negative values
+            for col in future_columns:
+                if col in merged_df.columns:
+                    col_letter = None
+                    # Find the column letter for this column name
+                    for cell in worksheet[1]:  # Header row
+                        if cell.value == col:
+                            col_letter = cell.column_letter
+                            break
+
+                    if col_letter:
+                        # Apply conditional formatting for negative values
+                        rule = CellIsRule(operator='lessThan', formula=['0'], fill=red_fill)
+                        range_to_format = f"{col_letter}2:{col_letter}{len(merged_df) + 1}"
+                        worksheet.conditional_formatting.add(range_to_format, rule)
+
+    print(f"✅ File saved as '{output_file}' with sheets: 'Monthly Demand' and 'opo'.")
+    if len(merged_df) > 0:
+        print("✅ Negative values in S_ columns are highlighted in red.")
+    else:
+        print("⚠️  No data rows found after filtering - conditional formatting not applied.")
+    print(f"📊 Final dataset contains {len(merged_df)} rows after filtering.")
+
+def main():
+    vbs()
+    txt_to_excel("current.txt", "current.xlsx")
+    txt_to_excel("next.txt", "next.xlsx")
+    txt_to_excel("opo.txt", "OPO.xlsx")
+    po_tigger()
+
+
+if __name__ == "__main__":
+    main()
